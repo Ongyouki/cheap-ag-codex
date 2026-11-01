@@ -16,6 +16,7 @@ import {
   type Changed, type Worktree,
 } from "./workspace.js";
 import { isAlive, normalisePath } from "./platform.js";
+import { restrictPolicy, type ExecutionPolicy } from "./clients.js";
 
 /** Jobs: runs each group of plan steps as one job, start to landing, under per-job caps (several groups make a batch); lists, shows and cancels jobs. */
 
@@ -91,12 +92,13 @@ function inlinePlan(root: string, req: DelegateRequest): { plan: string } | { fa
 }
 
 /** What a tool call that may start workers gets from the server. */
-export type WorkerContext = { provider: Provider; opencode: (route: Route) => Promise<Opencode>; progress: Progress };
+export type WorkerContext = { provider: Provider; opencode: (route: Route) => Promise<Opencode>; progress: Progress; policy?: ExecutionPolicy };
 
 export async function delegate(req: DelegateRequest, ctx: WorkerContext): Promise<string> {
   const root = projectRoot(process.cwd());
+  const policy = restrictPolicy(undefined, ctx.policy);
   // first: an unapproved repo gets CONSENT before any job, worktree, OpenCode boot or provider call
-  const gate = consentGate(root, ctx.provider.provider);
+  const gate = consentGate(root, ctx.provider.provider, policy);
   if ("block" in gate) return gate.block;
   const { route } = gate;
   let input: DelegateInput;
@@ -133,6 +135,10 @@ export async function delegate(req: DelegateRequest, ctx: WorkerContext): Promis
   } catch (err) {
     return failBlock((err as Error).message);
   }
+  if (policy.requireVerification) {
+    const missing = groups.filter((group) => !verifyCommands(group.steps.map((step) => step.fields["done-when"]), config.test_cmd).length);
+    if (missing.length) return failBlock(`executable verification required for group(s) ${missing.map((group) => group.label).join(", ")}: give backticked done-when commands or configure test_cmd`);
+  }
   if (!hasCommits(root)) return failBlock(`this repository has no commits yet, and Cheap Agent starts each job from the last commit. Make a first commit, then delegate again: git add -A && git commit -m "start"`);
   const busy = operationInProgress(root);
   if (busy) return failBlock(`${busy} in the working tree; finish or abort it, then delegate again`);
@@ -140,7 +146,7 @@ export async function delegate(req: DelegateRequest, ctx: WorkerContext): Promis
   // one boot with one route for every group: a config change would restart OpenCode under the batch's running jobs
   const opencode = await ctx.opencode(route);
   const release = holdOpencode();
-  const shared = { root, input, plan, config, route, opencode, provider: ctx.provider, progress: ctx.progress };
+  const shared = { root, input, plan, config, route, opencode, provider: ctx.provider, progress: ctx.progress, policy };
   // wait=false: every group is RUNNING the moment it is created
   if (groups.length === 1) {
     const one = runGroup({ ...shared, group: groups[0], batch: null });
@@ -152,7 +158,7 @@ export async function delegate(req: DelegateRequest, ctx: WorkerContext): Promis
   return input.wait === false ? run.render() : run.look(false, ctx.progress);
 }
 
-type Shared = { root: string; input: DelegateInput; plan: Plan; config: Config; route: Route; opencode: Opencode; provider: Provider; progress: Progress };
+type Shared = { root: string; input: DelegateInput; plan: Plan; config: Config; route: Route; opencode: Opencode; provider: Provider; progress: Progress; policy: ExecutionPolicy };
 
 /** One group, one job: what `runGroup` needs beyond what the whole delegation shares. */
 type GroupRun = Shared & {
@@ -180,6 +186,7 @@ function runGroup(g: GroupRun) {
   const { root, input, plan, config, route, opencode } = g;
   const steps = g.group.steps;
   const cmds = g.fix ? [g.fix.cmd] : verifyCommands(steps.map((s) => s.fields["done-when"]), config.test_cmd);
+  if (g.policy.requireVerification && !cmds.length) throw new Error("executable verification required before starting an implementation job");
   const { job, dir } = newJob(root);
   const write = (name: string, value: unknown) => writeWhole(join(dir, name), redact(typeof value === "string" ? value : JSON.stringify(value, null, 2) + "\n"));
   const stepIds = g.group.label;
@@ -189,11 +196,11 @@ function runGroup(g: GroupRun) {
   // against the implement model, so a tier model shows as model= in the headline
   const requested = modelName(route.implement);
   const startedAt = new Date();
-  write("request.json", { ...input, steps: stepIds, batch: g.batch, model: modelName(model), difficulty, startedAt });
+  write("request.json", { ...input, steps: stepIds, batch: g.batch, model: modelName(model), difficulty, startedAt, policy: g.policy });
 
-  const escalation = route.escalation;
+  const escalation = g.policy.allowModelSwitch ? route.escalation : undefined;
   // the job's model, then its allowed fallbacks: a provider limit moves the session on to the next one
-  const models = chain(model, route.fallbacks.filter((m) => modelName(m) !== modelName(model)));
+  const models = chain(model, g.policy.allowModelSwitch ? route.fallbacks.filter((m) => modelName(m) !== modelName(model)) : []);
   let billing: JobRecord["billing"];
   // whoever is waiting on this job right now: delegate first, then each reply
   let progress = g.progress;
@@ -304,6 +311,7 @@ function runGroup(g: GroupRun) {
     // the full output stays on disk; Claude only ever sees the tail
     for (const r of runs) appendFileSync(join(dir, "verify.log"), redact(`$ ${r.cmd}\n${r.output}\n(exit ${r.ok ? "ok" : "failed"}, ${r.ms} ms)\n\n`));
     const run = runs.find((r) => !r.ok);
+    if (g.policy.requireVerification && !run && runs.length !== cmds.length) throw new Error("executable verification did not complete; changes were not landed");
     return run && { run, tail: errorTail(run, worktree!.path) };
   };
 
@@ -327,6 +335,7 @@ function runGroup(g: GroupRun) {
     const record = {
       format: "cheapag/1" as const, job, batch: g.batch, kind: g.fix ? "fix" : "implement", status, landed,
       plan: input.plan, steps: stepIds, provider: g.provider.provider,
+      policy: g.policy,
       // the server process running the job: a restart finds RUNNING/BLOCKED records whose pid is gone
       pid: process.pid,
       models: {
@@ -351,7 +360,7 @@ function runGroup(g: GroupRun) {
       // a worker stopped by a cap rarely says what it left undone
       missing: status === "PARTIAL" && !report.missing.length ? [`unknown: stopped (${stopped?.reason ?? "cap"}); compare the diff with the step`] : report.missing,
       reason, conflict,
-      verify: verified.map(({ cmd, ok, ms }) => ({ cmd, ok, ms })), selfFix, redo: redone, ...(repro && { repro }), question: asked?.length === 1 ? asked[0] : null, ...(asked && asked.length > 1 && { questions: asked }), autoRejected: rejections,
+      verify: verified.map(({ cmd, ok, ms, code, signal }) => ({ cmd, ok, ms, ...(g.policy.requireVerification ? { code, signal } : {}) })), selfFix, redo: redone, ...(repro && { repro }), question: asked?.length === 1 ? asked[0] : null, ...(asked && asked.length > 1 && { questions: asked }), autoRejected: rejections,
       usage: { turns: session?.totals().turns ?? 0, ...(session?.totals().usage ?? { costUsd: 0 }) },
       timing: { startedAt, endedAt: status === "RUNNING" || waiting ? null : new Date(), ms: Date.now() - startedAt.getTime(), ...(waiting && { blockedAt }) },
     };
@@ -502,7 +511,7 @@ function runGroup(g: GroupRun) {
             if (stopped as Stop | undefined) break; // a cap, cancel or provider budget (cast: set from callbacks, keep TS from narrowing)
             const esc = attempt === "esc";
             if (esc && escalated) break; // already used for the turn-cap hand-over
-            const skip = esc && escalationSkip(escalation, models, config.escalation_skip_at, session!.totals().spend);
+            const skip = esc && (!g.policy.allowModelSwitch ? "esc: disabled by client execution policy" : escalationSkip(escalation, models, config.escalation_skip_at, session!.totals().spend));
             if (skip) {
               tried.push(tag + skip);
               break;
@@ -540,7 +549,8 @@ function runGroup(g: GroupRun) {
       write("finish.json", report);
       // ticket 33: a turn cap during verify/fixes no longer loses the escalation. With a diff and a failing check it
       // still runs once on the escalation model, on its own smaller budget; a cap reached here ends the job as before.
-      const escSkip = escalated || !failing || envFailure(failing.run) || !cmds.length || !worktree || !session ? "not now" : escalationSkip(escalation, models, config.escalation_skip_at, session.totals().spend);
+      const escSkip = !g.policy.allowModelSwitch ? "esc: disabled by client execution policy" : escalated || !failing || envFailure(failing.run) || !cmds.length || !worktree || !session ? "not now" : escalationSkip(escalation, models, config.escalation_skip_at, session.totals().spend);
+      if (stopped?.cap === "turns" && failing && !g.policy.allowModelSwitch) tried.push(escSkip!);
       if (stopped?.cap === "turns" && !escSkip && worktreeDiff(worktree!).changed.length) {
         escalated = true;
         turnBase = session!.totals().turns;
@@ -667,7 +677,9 @@ function runBatch(groups: Group[], shared: Shared) {
     const landed = ended.filter((r) => r.landed).map((r) => r.job); // in landing order: groups land in step order
     const { plan, steps } = shared.input;
     const endedAt = ended.length === groups.length ? new Date() : null;
-    writeWhole(join(dir, `${batch}.json`), redact(JSON.stringify({ ...record(), plan, steps, landed, startedAt, endedAt }, null, 2) + "\n"));
+    writeWhole(join(dir, `${batch}.json`), redact(JSON.stringify({ ...record(), plan, steps, landed, startedAt, endedAt, policy: shared.policy,
+      ...(shared.policy.requireVerification ? { integrationCommand: cmd ?? null } : {}),
+    }, null, 2) + "\n"));
   };
 
   // worker slots: held while a worker runs (BLOCKED included: its worktree and session stay live, and a reply resumes it at
@@ -920,6 +932,7 @@ const LIST_MAX = 20;
 
 type StoredRecord = JobRecord & {
   pid?: number; batch?: string | null; timing?: { startedAt?: string; endedAt?: string | null; blockedAt?: string }; baseline?: { tree?: string | null }; discarded?: boolean;
+  policy?: ExecutionPolicy;
 };
 
 /** How long a BLOCKED job has waited for a reply, as a suffix for its one-line headline (jobs list, cheapag status). */
@@ -1015,20 +1028,27 @@ export async function landJobs(input: LandInput, ctx: WorkerContext): Promise<st
 /** A settled batch, still pending, with nothing left to land: runs its integration check and returns the batch block. */
 async function integrateLater(root: string, config: Config, batch: string, ctx: WorkerContext) {
   const file = join(root, ".cheapag", "batches", `${batch}.json`);
-  let record: BatchRecord & Integration & { plan: string; steps: string };
+  let record: BatchRecord & Integration & { plan: string; steps: string; policy?: ExecutionPolicy; integrationCommand?: string | null };
   try {
     record = JSON.parse(readFileSync(file, "utf8"));
   } catch {
     return undefined; // cleaned up
   }
-  const cmd = config.integration_cmd ?? config.test_cmd;
+  // Codex batches retain their original check, including an explicit absence. Legacy Claude retains its behavior.
+  const pinned = record.policy?.requireVerification === true;
+  const cmd = pinned ? record.integrationCommand : config.integration_cmd ?? config.test_cmd;
   const jobRecords = record.jobs.map((id) => readRecord(join(root, ".cheapag", "jobs", id)));
-  if (batches.has(batch) || !cmd || !jobRecords.every((r) => r) || !allLanded(jobRecords as JobRecord[])) return undefined;
+  if (batches.has(batch) || !jobRecords.every((r) => r) || !allLanded(jobRecords as JobRecord[])) return undefined;
+  if (pinned && record.integration === "pending" && (typeof cmd !== "string" || !cmd.trim())) {
+    return failBlock(`batch ${batch}: original integration check unavailable; cannot verify this legacy or damaged Codex batch using changed configuration`);
+  }
+  if (!cmd) return undefined;
   // claimed under the lock: two sessions landing a batch's last groups at once must not both run its check
   const claimed = await withLock(root, () => {
     const now = JSON.parse(readFileSync(file, "utf8")) as typeof record;
     if (now.integration !== "pending") return false;
-    writeWhole(file, redact(JSON.stringify({ ...now, integration: "running" }, null, 2) + "\n"));
+    record = { ...now, integration: "running", policy: restrictPolicy(now.policy, ctx.policy) };
+    writeWhole(file, redact(JSON.stringify(record, null, 2) + "\n"));
     return true;
   });
   if (!claimed) return undefined;
@@ -1036,12 +1056,13 @@ async function integrateLater(root: string, config: Config, batch: string, ctx: 
   let release: (() => void) | undefined;
   let fix: ReturnType<typeof runGroup> | undefined;
   const fixer = async (): Promise<Shared> => {
-    const gate = consentGate(root, ctx.provider.provider);
+    const policy = restrictPolicy(record.policy, ctx.policy);
+    const gate = consentGate(root, ctx.provider.provider, policy);
     if ("block" in gate) throw new Error(`no consent for a fix job: ${gate.block.split("\n")[0]}`);
     const plan = parsePlan(readFileSync(join(root, record.plan), "utf8"));
     const opencode = await ctx.opencode(gate.route);
     release = holdOpencode();
-    return { root, input: { plan: record.plan, steps: record.steps }, plan, config, route: gate.route, opencode, provider: ctx.provider, progress: ctx.progress };
+    return { root, input: { plan: record.plan, steps: record.steps }, plan, config, route: gate.route, opencode, provider: ctx.provider, progress: ctx.progress, policy };
   };
   try {
     await integrate(root, cmd, batch, record, jobRecords.map((r) => r!.landed), () => writeWhole(file, redact(JSON.stringify(record, null, 2) + "\n")), fixer, (run) => (fix = run));

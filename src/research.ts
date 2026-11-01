@@ -13,6 +13,7 @@ import { chain, modelName, recordSpend, runRouted, type Route } from "./routing.
 import { openSession, releaseDirectory, type Session } from "./worker.js";
 import { createWorktree, git, hasCommits, projectRoot, removeWorktree, type Worktree } from "./workspace.js";
 import { checkAllows } from "./verify.js";
+import { restrictPolicy, type ExecutionPolicy } from "./clients.js";
 
 /**
  * Research: one question about the codebase, answered by a worker that reads, searches and runs test commands but
@@ -33,11 +34,12 @@ type Answer = Pick<ResearchRecord, "status" | "answer" | "refs" | "confidence" |
 
 export async function research(
   input: ResearchInput,
-  ctx: { provider: Provider; opencode: (route: Route) => Promise<Opencode>; progress: (turns: number, message: string) => void },
+  ctx: { provider: Provider; opencode: (route: Route) => Promise<Opencode>; progress: (turns: number, message: string) => void; policy?: ExecutionPolicy },
 ): Promise<string> {
   const root = projectRoot(process.cwd());
+  const policy = restrictPolicy(undefined, ctx.policy);
   // first: an unapproved repo gets CONSENT before any record, OpenCode boot or provider call
-  const gate = consentGate(root, ctx.provider.provider);
+  const gate = consentGate(root, ctx.provider.provider, policy);
   if ("block" in gate) return gate.block;
   const scope: string[] = [];
   const resolvedPaths: string[] = [];
@@ -74,7 +76,7 @@ export async function research(
   // the research model, then its fallbacks, each only if the repo's allowlist kept it (src/consent.ts)
   const models = chain(gate.route.research ?? gate.route.implement, gate.route.researchFallbacks);
   const startedAt = new Date();
-  write("request.json", { ...input, scope, maxWords, models: [models.first, ...models.rest].map(modelName), startedAt });
+  write("request.json", { ...input, scope, maxWords, models: [models.first, ...models.rest].map(modelName), startedAt, policy });
 
   const prompt = [
     `Question: ${input.question}`,
@@ -162,6 +164,7 @@ export async function research(
   const final = models.current;
   const record = {
     format: "cheapag/1" as const, job: id, kind: "research", provider: ctx.provider.provider, question: input.question, scope,
+    policy,
     ...answer, reason, filesRead: files.size, unlanded: unlandedJobs(root),
     models: { requested: modelName(models.first), final: modelName(final) },
     usage: spent,

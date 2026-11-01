@@ -63,12 +63,12 @@ export function allowRepo(cwd: string, env: Record<string, string>, args: string
  * Hermetic (see `hermeticHome`); `cwd` defaults to that home, so `.cheapag/` never lands in this repo.
  * `allow` first opts the cwd's repo in through the real CLI (`[]` = all models), as the developer would.
  */
-export async function startServer(opts: { cwd?: string; env?: Record<string, string>; logins?: Logins; nodeArgs?: string[]; allow?: string[] } = {}) {
+export async function startServer(opts: { cwd?: string; env?: Record<string, string>; logins?: Logins; nodeArgs?: string[]; serverArgs?: string[]; allow?: string[] } = {}) {
   const { home, env } = hermeticHome(opts.logins);
   if (opts.allow) allowRepo(opts.cwd ?? home, { ...env, ...opts.env }, opts.allow);
   const transport = new StdioClientTransport({
     command: process.execPath,
-    args: [...(opts.nodeArgs ?? []), serverEntry],
+    args: [...(opts.nodeArgs ?? []), serverEntry, ...(opts.serverArgs ?? [])],
     cwd: opts.cwd ?? home,
     env: { ...env, ...opts.env },
     stderr: "inherit",
@@ -99,9 +99,9 @@ export async function callText(client: Client, name: string, args: Record<string
 export type RepoState = "clean" | "dirty" | "untracked";
 
 /** A throwaway git repo with one commit, then left in the requested working-tree state. */
-export function tempRepo(state: RepoState = "clean") {
+export function tempRepo(state: RepoState = "clean", prefix = "cheapag-test-") {
   // realpathSync.native: macOS tmpdir is a /var -> /private/var symlink, and git reports the resolved path; expands 8.3 names on Windows
-  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "cheapag-test-")));
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), prefix)));
   const git = (...args: string[]) =>
     execFileSync("git", ["-c", "user.name=cheapag-test", "-c", "user.email=test@cheapag.invalid", "-c", "commit.gpgsign=false", ...args], { cwd: dir, stdio: "pipe" }).toString();
 

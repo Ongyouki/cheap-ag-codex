@@ -1,5 +1,48 @@
 # Codex CLI integration handoff
 
+## Resume here — M1.1
+
+Read [AGENTS.md](../AGENTS.md) and [CODEX_ROADMAP.md](CODEX_ROADMAP.md) first. The current approved task is documentation closeout; implementation is not authorized by this handoff update. The independent review findings are still open for M1.1 status, although the current uncommitted tree already contains candidate changes and tests for them. Start by inspecting those exact changes against the findings, then make only targeted corrections if the evidence requires them:
+
+1. Ensure the live runner's actual Codex/worker subprocess environment is an explicit minimal allowlist and excludes unrelated inherited provider credentials/configuration. Regression tests must use synthetic secrets and a stub child, never real credentials or provider calls.
+2. Ensure each Codex batch snapshots its original executable integration check (including an explicit no-check value) and deferred checks/fix jobs use that snapshot after config changes/removal. Define conservative behavior for legacy records without the snapshot and prove Claude behavior is unchanged.
+
+**M1.1 acceptance:** targeted regressions reproduce and resolve both findings; cover original `integration_cmd`/`test_cmd` fallback, replacement/removal, no-check, missing legacy metadata, and deferred fix persistence; environment projection is verified at the child boundary. Then run relevant tests, full offline suite, build, and type-check. Report actual skipped/unrun cases. Do not run M1.2. Stop for independent ChatGPT review before proceeding.
+
+## Current project state
+
+- Roadmap: [CODEX_ROADMAP.md](CODEX_ROADMAP.md). M1.0 offline core is implemented/tested. M1.1 is pending acceptance and independent review. M1.2 is pending, untested, and separately authorization-gated. M1 is not complete.
+- Architecture: one shared cheap-ag MCP/job engine with explicit thin Claude/Codex client profiles. Existing six MCP tool names/schemas and Claude-compatible no-argument server startup are preserved. OpenCode remains the cheap worker, with isolated worktrees, consent, caps, verification, and uncommitted landing.
+- Codex policy: executable checks required; same-model repairs bounded; no automatic model switching or expensive fallback; policy persists across jobs/retries/deferred fixes. These are local implementation claims to verify against source/tests, not live-provider proof.
+- Independent-review findings pending M1.1: (1) prevent unrelated inherited credentials/configuration reaching live runner subprocesses; (2) preserve the originally selected verification command for deferred integration. `land apply` is a known limitation: it can apply retained changes without rerunning original verification commands.
+- Real Codex → cheap-ag → external-worker workflow has **not** been verified. Candidate live tests are gated; do not enable or run them as part of M1.1.
+
+## Current checkout and verification
+
+- Branch: `feature/codex-support`; HEAD: `c2f97a0f8487a69b4e35530da390851d7fb90660` (`Initial analysis handover`), tracking `origin/feature/codex-support` at the recorded checkpoint.
+- The working tree is dirty. Uncommitted tracked source changes: `src/consent.ts`, `src/index.ts`, `src/jobs.ts`, `src/research.ts`, `src/server.ts`, `test/harness.ts`; tracked documentation change: this handoff. Untracked implementation/docs/tests include `AGENTS.md`, `docs/CODEX_ROADMAP.md`, `docs/codex.md`, `src/clients.ts`, `test/clients.test.ts`, `test/codex-demo-env.ts`, `test/codex-demo-env.test.ts`, `test/codex-live.test.ts`, and `test/codex.test.ts`. `.review/` contains untracked on-demand review artifacts and ZIPs. Check `git status` before any work; do not discard or overwrite these local changes.
+- Last successful M1.1 candidate verification (macOS, offline, live modes disabled): targeted Codex/batch/landing tests **62 passed**; environment tests **2 passed**; full suite **431 passed, 0 failed, 8 skipped** (439 tests, 32 files, 39.68 seconds); build, type-check, and `git diff --check` passed. This proves only the exercised local/fake-worker paths, not live Codex/provider behavior. M1.0 earlier full run: 425 passed, 8 skipped; pre-M1 macOS baseline: 388 passed, 5 skipped. Do not rerun historical diagnosis unless new evidence requires it.
+- Review ZIPs and reports under `.review/` are local only. Ignored `.cheapag/` test evidence is also local and may not exist in another clone.
+
+**Approval boundaries:** no commit, push, publication, paid provider call, authentication change, or repository consent action without explicit developer approval. M1.2 requires separate authorization before any external provider calls, authentication changes, or repository consent actions, including setup. Never use this source repository as the demonstration worker target. No provider calls, credentials, consent, commits, or pushes were changed in the recorded M1.1 session.
+
+## Historical M1.0 macOS implementation checkpoint
+
+Updated 2026-10-31 after the user approved Milestone 1, explicitly deferring the Windows fixture repairs and withholding authorization for paid provider calls or a real Codex-to-worker demonstration.
+
+- Branch `feature/codex-support`, HEAD `c2f97a0` (`Initial analysis handover`). Implementation changes are uncommitted; no project commits, pushes, or publication were performed.
+- Recovered macOS baseline: build/typecheck passed; **388 passed, 0 failed, 5 skipped** (393 tests). The prior attributable Windows run remains **348 passed, 24 failed, 21 skipped**, rather than the historical unsupported count of 21 failures.
+- Implemented one shared engine with explicit `serve --client codex|claude` selection. Legacy piped no-argument startup, Claude instructions/metadata, and all six MCP tool input schemas are preserved.
+- Added isolated Codex policy: executable verification before implementation startup; bounded same-model repairs; no fallback/escalation model switching; verification exit evidence; policy persisted in job/research/batch records and retained across reply, redo, and deferred integration, including a later Claude host. Codex runtime state resolves to the repository root when launched from a subdirectory.
+- Production changes are limited to new `src/clients.ts` and existing `src/index.ts`, `src/server.ts`, `src/consent.ts`, `src/jobs.ts`, `src/research.ts`. No new dependencies or engine rewrite.
+- Added `test/clients.test.ts`, `test/codex.test.ts`, opt-in `test/codex-live.test.ts`, and two optional harness arguments for client selection and spaced fixture paths. Windows-specific fixture repairs remain deferred.
+- Offline verification: build and typecheck passed; **425 passed, 0 failed, 8 skipped** (433 tests, 31 files), 38.23 seconds in the final run. The eight skips are five existing live-provider tests plus three preparation/live-demonstration cases. The separate offline preparation case also passed, creating disposable fixtures without credentials, consent, or provider calls. The completed suite ran with required localhost/process permissions, npm offline, and both live modes disabled.
+- Installed macOS `codex` is **0.163.0**. Version/help and per-invocation MCP configuration parsing were checked, including a spaced subdirectory and a 300-second tool timeout. Actual orchestration and authentication remain unverified; do not substitute the prior Windows 0.166.0 probe as macOS proof.
+- Manual setup, policy behavior, remaining limits, and the gated demonstration procedure are documented in [codex.md](codex.md). Local ignored test evidence is in `.cheapag/milestone-1-macos/`; it is not guaranteed to travel to another clone.
+- This is historical M1.0 status. The current next action is M1.1 as defined in “Resume here” above; do not begin the real demonstration until M1.1 review passes and the separate M1.2 authorizations are granted. Ubuntu/Windows and Node 22 validation remain pending for M3.
+
+The remaining sections preserve the earlier Windows research and planning checkpoint. Their statements that implementation is pending or the handoff is untracked describe that historical checkpoint, superseded by the status above and the user's later approval.
+
 Updated: 2026-10-31 after the baseline-diagnosis and Milestone 1 planning session. Repository: `C:\Users\MAD\Documents\Projects\cheap-ag-codex`.
 
 ## Read this first: scope and authorization

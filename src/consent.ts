@@ -5,6 +5,7 @@ import { failBlock, renderConsent } from "./report.js";
 import { loadConfig } from "./config.js";
 import { fullRoute, modelName, presetOf, routeModels, type Route, type WorkerModel } from "./routing.js";
 import { projectRoot } from "./workspace.js";
+import { CLAUDE_POLICY, type ExecutionPolicy } from "./clients.js";
 
 /**
  * Consent: nothing leaves the repo until the developer opts in with `cheapag allow` (spec: Consent, A21).
@@ -84,15 +85,17 @@ function withZdr(m: WorkerModel): WorkerModel {
  * - `route`: the allowlisted models the job may use, every role and fallback filtered. A disallowed fallback or escalation
  *   model is dropped, not a failure; with no implement model or fallback allowed, an allowed escalation model implements.
  */
-export function consentGate(root: string, provider: Provider["provider"]): { block: string } | { route: Route } {
+export function consentGate(root: string, provider: Provider["provider"], policy: ExecutionPolicy = CLAUDE_POLICY): { block: string } | { route: Route } {
   const consent = readConsent(root);
-  const full = fullRoute(provider, configuredModels(root));
+  const configured = fullRoute(provider, configuredModels(root));
+  // Restrict candidates before picking: otherwise an escalation-only allowlist can promote that model to implement.
+  const full = policy.allowModelSwitch ? configured : { ...configured, fallbacks: [], escalation: undefined, researchFallbacks: [] };
   // consent names the provider it was given for: a new login elsewhere needs a new opt-in; so does another route
-  if (!consent || consent.provider !== provider || routeMoved(root, consent)) return { block: consentBlock(root, provider, full) };
+  if (!consent || consent.provider !== provider || routeMoved(root, consent)) return { block: consentBlock(root, provider, full, policy) };
   const zdr = consent.mode === "zdr-only" && provider === "openrouter";
   const pick = (ms: (WorkerModel | undefined)[]) => ms.filter((m): m is WorkerModel => !!m && allowed(provider, consent, m)).map((m) => (zdr ? withZdr(m) : m));
   const [implement, ...fallbacks] = pick([full.implement, ...full.fallbacks, full.escalation]);
-  if (!implement) return { block: failBlock(`no allowed model for ${providerLabel(provider)} under this repo's consent (${describe(consent)}); ask the user to widen it with /cheapag:allow`) };
+  if (!implement) return { block: failBlock(`no allowed model for ${providerLabel(provider)} under this repo's consent (${describe(consent)}); ${policy.consentGuidance === "terminal" ? "ask the developer to review the configured initial model and run the local cheapag allow command themselves" : "ask the user to widen it with /cheapag:allow"}`) };
   const [escalation] = pick([full.escalation]);
   const others = (m: WorkerModel) => modelName(m) !== modelName(implement) && modelName(m) !== modelName(escalation ?? implement);
   // research with nothing of its own allowed runs on the implement chain
@@ -124,7 +127,7 @@ function configuredModels(root: string) {
 export const describe = (c: Consent) => (c.mode === "all" ? "all models" : c.mode === "zdr-only" ? "zero-retention only" : `models ${c.models!.join(", ")}`);
 
 /** Spec D5's CONSENT block: who would receive the code, their known retention, and how the user approves. */
-function consentBlock(root: string, provider: Provider["provider"], full: Route) {
+function consentBlock(root: string, provider: Provider["provider"], full: Route, policy: ExecutionPolicy) {
   const models = routeModels(full);
   // D5: the role models, then the fallbacks
   const main = routeModels({ ...full, fallbacks: [], researchFallbacks: [] }).map((m) => m.id);
@@ -137,6 +140,8 @@ function consentBlock(root: string, provider: Provider["provider"], full: Route)
     repo: basename(root),
     send: `code from this repo → ${providerLabel(provider)}: ${ids}`,
     retention: retentionLine,
-    approve: "ask the user to run /cheapag:allow (all) or /cheapag:allow --zdr-only (terminal: npx cheap-agent allow [--zdr-only | --models a,b]); never approve yourself",
+    approve: policy.consentGuidance === "terminal"
+      ? "ask the developer to run the local built cheapag allow command themselves (--models provider/model,... or --zdr-only); never approve yourself"
+      : "ask the user to run /cheapag:allow (all) or /cheapag:allow --zdr-only (terminal: npx cheap-agent allow [--zdr-only | --models a,b]); never approve yourself",
   });
 }
