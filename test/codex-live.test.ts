@@ -6,7 +6,7 @@ import { CODEX_POLICY } from "../src/clients.js";
 import { readConsent } from "../src/consent.js";
 import { runCli } from "../src/platform.js";
 import { snapshot, serverEntry } from "./harness.js";
-import { isolatedEnv } from "./codex-demo-env.js";
+import { codexMcpConfig, isolatedEnv } from "./codex-demo-env.js";
 
 /** Preparation is offline. Live execution is a separate, explicit opt-in; neither mode grants consent. */
 const prepare = process.env.CHEAPAG_CODEX_PREPARE === "1";
@@ -102,8 +102,7 @@ test.skipIf(!live).each(["success", "failure"])("real Codex → cheap worker: %s
   writeFileSync(join(evidence, "codex-version.txt"), version.stdout);
   const command = name === "success" ? CHECK : NEGATIVE_CHECK;
   const prompt = `Use only cheapag's MCP tools to implement this task; do not edit files, run shell writes, or use native agents yourself. Call delegate exactly once with ${JSON.stringify({ task: "Change value.mjs to export value = 2 and update test/value.test.mjs to assert 2. Touch only these two files.", files: "value.mjs,test/value.test.mjs", done_when: `\`${command}\` must pass` })}. The developer already granted this repository's consent. Never run allow, modify acceptance commands, invoke land apply, switch models, or retry a delegation after a timeout. Inspect the existing job instead. On success review the diff and verification evidence. On failure report the evidence and retained worktree. End with a concise result and risks.`;
-  const toml = (s: string) => JSON.stringify(s);
-  const mcp = `mcp_servers.cheapag={command=${toml(manifest.node)},args=[${[manifest.entry, "serve", "--client", "codex"].map(toml).join(",")}],cwd=${toml(join(repo, "sub directory"))},tool_timeout_sec=300}`;
+  const mcp = codexMcpConfig(root, { node: manifest.node, entry: manifest.entry, cwd: join(repo, "sub directory") });
   const result = runCli("codex", ["exec", "--json", "--sandbox", "read-only", "--cd", join(repo, "sub directory"), "-c", mcp, prompt], {
     cwd: repo, env, encoding: "utf8", timeout: 330_000, maxBuffer: 16 * 1024 * 1024,
   });

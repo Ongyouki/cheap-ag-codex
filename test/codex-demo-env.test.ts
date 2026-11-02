@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, onTestFinished, test } from "vitest";
-import { isolatedEnv } from "./codex-demo-env.js";
+import { codexMcpConfig, isolatedEnv } from "./codex-demo-env.js";
 
 const unrelated = {
   OPENAI_API_KEY: "synthetic-openai", ANTHROPIC_API_KEY: "synthetic-anthropic", OPENROUTER_API_KEY: "synthetic-openrouter",
@@ -26,6 +26,24 @@ test("demo environment allows only process essentials and fixes every profile lo
     XDG_CACHE_HOME: join(root, "worker-home", "cache"), XDG_STATE_HOME: join(root, "worker-home", "state"),
   });
   expect(isolatedEnv(root, {})).not.toHaveProperty("PATH");
+});
+
+test.each([join(tmpdir(), "cheapag isolated environment"), 'C:\\demo "quoted"\\profile'])("MCP configuration explicitly sets isolated profiles without parent environment forwarding: %s", (root) => {
+  const cwd = join(root, "success repo", "sub directory");
+  const entry = join(root, "local build", "index.js");
+  const config = codexMcpConfig(root, { node: process.execPath, entry, cwd });
+  const expectedProfiles = {
+    HOME: join(root, "process-home"), USERPROFILE: join(root, "process-home"), CODEX_HOME: join(root, "codex-home"),
+    XDG_DATA_HOME: join(root, "worker-home", "data"), XDG_CONFIG_HOME: join(root, "worker-home", "config"),
+    XDG_CACHE_HOME: join(root, "worker-home", "cache"), XDG_STATE_HOME: join(root, "worker-home", "state"),
+  };
+  // Assert the actual -c override contains all profile paths in the server's env table,
+  // even when Codex forwards none of the parent's XDG variables. No credentials are serialized.
+  expect(config.split(",env=")[1]?.split(",tool_timeout_sec=")[0]).toBe(
+    `{${Object.entries(expectedProfiles).map(([key, value]) => `${JSON.stringify(key)}=${JSON.stringify(value)}`).join(",")}}`,
+  );
+  expect(config).toContain(`command=${JSON.stringify(process.execPath)},args=[${JSON.stringify(entry)},"serve","--client","codex"],cwd=${JSON.stringify(cwd)}`);
+  expect(config).toContain('tool_timeout_sec=300,enabled_tools=["delegate","jobs"],tools={delegate={approval_mode="approve"},jobs={approval_mode="approve"}}');
 });
 
 test("a stub CLI and its worker child receive no unrelated credentials or loader configuration", () => {

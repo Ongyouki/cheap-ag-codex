@@ -1,5 +1,13 @@
 # Codex CLI integration handoff
 
+## 2026-11-01 — Targeted M1.2 MCP environment repair
+
+The developer reports that Codex now invokes cheap-ag MCP tools, but delegation fails with `no worker provider`, despite offline provider discovery finding `openrouter` in the isolated worker profile. The runner previously supplied XDG paths only to the Codex parent process. `test/codex-demo-env.ts` now builds the per-invocation MCP configuration with an explicit server `env` table containing all four isolated XDG paths, plus the isolated `HOME`, `USERPROFILE`, and `CODEX_HOME`. The configuration includes no inherited credentials or unrelated environment variables. `test/codex-live.test.ts` uses this helper and preserves the existing delegate/jobs approval settings, read-only sandbox, 300-second tool timeout, and worker spending limits.
+
+Offline regressions check the actual configuration's environment table and preserved tool settings, including paths with spaces, quotes, and backslashes. This repair does not establish live provider success or complete M1.2. No live test, model call, authentication change, or repository consent action is authorized by this repair request.
+
+Verification on macOS: targeted environment/configuration tests **4 passed**; full offline suite **433 passed, 0 failed, 8 skipped** (441 tests, 32 files); build, type-check, and `git diff --check` passed. The initial sandbox suite attempt failed with localhost `listen EPERM` errors and resulting timeouts (242 failed, 122 passed, 77 skipped); the successful full run used approved localhost/subprocess permissions. `CHEAPAG_LIVE` was unset and both Codex preparation/live flags were disabled for the full runs. The eight skips cover five live-provider tests and three Codex preparation/live cases. No live/provider calls were made.
+
 ## Resume here — M1.1
 
 Read [AGENTS.md](../AGENTS.md) and [CODEX_ROADMAP.md](CODEX_ROADMAP.md) first. The current approved task is documentation closeout; implementation is not authorized by this handoff update. The independent review findings are still open for M1.1 status, although the current uncommitted tree already contains candidate changes and tests for them. Start by inspecting those exact changes against the findings, then make only targeted corrections if the evidence requires them:
