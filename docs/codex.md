@@ -37,6 +37,57 @@ Launch Codex with `CODEX_HOME` pointing to that isolated directory. Do not overw
 
 The [Codex MCP documentation](https://learn.chatgpt.com/docs/extend/mcp?surface=cli) documents stdio command, arguments, working directory, environment, and tool timeouts. The default tool timeout is 60 seconds. The 300-second example is intended for the bounded, single-task demonstration below. General long batches can still outlive that timeout. After an ambiguous timeout, inspect the existing job; do not submit the same delegation again. A progress notification is not proof that the client will wait indefinitely.
 
+## Opt-in direct MCP routing (M1.4)
+
+With code mode, a long MCP call can incur executor and polling overhead. Direct routing exposes the cheap-ag namespace for direct tool calls, avoiding that extra path for cheap-ag. It changes Codex tool routing, not the shared worker engine, six MCP schemas, consent, verification, model selection, or Claude Code integration. The server must already be registered as `cheapag` to match the exact namespace `mcp__cheapag`.
+
+**Tested version: Codex CLI 0.166.0**, from the developer's real demonstrations. Older and newer versions are unverified here; this code-mode setting may evolve. The [official configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference) describes `features.code_mode.direct_only_tool_namespaces` as an array of namespaces restricted to direct tool calls. This recommendation does not enable or disable code mode globally.
+
+From a built checkout, print the optional TOML:
+
+```sh
+node /absolute/path/to/cheap-ag-codex/dist/index.js codex-config
+```
+
+The command takes no arguments and prints exactly:
+
+```toml
+[features.code_mode]
+direct_only_tool_namespaces = ["mcp__cheapag"]
+```
+
+The generator reads no configuration, writes no files, invokes no Codex/provider process, and grants no consent. It does not modify `~/.codex/config.toml`, a custom `CODEX_HOME`, or any MCP registration. Review its output before using it; do not redirect it over an existing config file or blindly append a duplicate TOML table.
+
+For a single invocation, when the effective direct-only list is absent or empty, use this override (POSIX shell or PowerShell):
+
+```sh
+codex -c 'features.code_mode.direct_only_tool_namespaces=["mcp__cheapag"]'
+```
+
+The same `-c` argument can be passed to `codex exec` for an independently authorized task. [Codex CLI overrides](https://learn.chatgpt.com/docs/config-file/config-advanced#one-off-overrides-from-the-cli) accept dotted keys and TOML values and take precedence for that invocation. Omitting the argument on the next launch restores the underlying routing configuration.
+
+**Preserve existing list entries:** this override replaces the entire `direct_only_tool_namespaces` array. If the effective configuration already lists other namespaces, retain all of them and add `"mcp__cheapag"` once to that array instead of using the one-entry override. For persistent opt-in, manually merge the key into the existing `[features.code_mode]` table in the intended profile, preserving its other keys, other namespace entries, and all `[mcp_servers.*]` tables. Only cheap-ag should gain direct routing. To undo a manual merge, remove only the entry you added. There is no automatic installer or configuration merger in M1.4.
+
+### Evidence and verification
+
+The developer reports completed real Codex → cheap-ag → DeepSeek demonstrations (M1.2) and these M1.3 measurements for the same medium-complexity Python task:
+
+| Configuration | Codex tokens | Time | Held-out tests |
+| --- | ---: | ---: | ---: |
+| Codex only | 128,478 | 63.7s | 28/28 |
+| Existing MCP routing | 183,944 | 67.1s | 28/28 |
+| Direct MCP routing | 69,558 | 58.3s | 28/28 |
+
+The original delegated run contained four `wait` calls. The optimized run contained zero `wait` calls, one `delegate` call, and two `exec` calls. These are single-run observations supplied by the developer, not guaranteed savings, repeated-trial statistics, or worker API billing measurements. The supplied results were not rerun or independently audited during M1.4. They motivate an opt-in routing setting; they do not establish M4's systematic benchmark acceptance or close independent review gates.
+
+To verify without a provider call:
+
+1. Check `codex --version` against the tested 0.166.0 release. Print `codex-config` and compare it with the exact TOML above; the complete block must have only that table and key. A TOML parser should produce `features.code_mode.direct_only_tool_namespaces` equal to `["mcp__cheapag"]`.
+2. Review the intended profile and any overriding layers locally. Confirm that the server name is `cheapag`, other servers/settings remain intact, and existing direct-only entries are retained. The generator does not discover effective configuration or check installed-version support.
+3. Run the offline regressions below, including `test/codex-config.test.ts` and `test/clients.test.ts`. They exercise the built CLI, repeatability, no file writes with fresh/existing isolated profiles, argument rejection, and unchanged Claude startup and all six MCP schemas. These checks establish emitted configuration and compatibility, not live routing.
+
+Runtime confirmation requires a separately authorized live task: retain normal approvals, inspect the Codex tool trace for direct `mcp__cheapag` calls, and compare executor/polling events and matching cheap-ag job evidence. Zero `wait` calls is an observation from the optimized run, not an invariant; timeouts still require inspecting the existing job without duplicating delegation. No live verification is part of M1.4.
+
 ## Execution and consent
 
 Codex-mode implementation requires at least one executable acceptance command for every selected group. Put commands in backticks in `done_when` or the plan's `done-when`, or configure `test_cmd`. Explicit commands take precedence over `test_cmd`. Missing checks fail before worker startup or job creation; `tests=none` is never verified success.
@@ -94,7 +145,7 @@ The MCP tests require localhost listeners and process lifecycle permissions. A s
 
 ## Opt-in real demonstration
 
-No paid provider call or real Codex-to-worker demonstration was performed for this implementation. M1.2 requires separate explicit authorization before external provider calls, authentication changes, or repository consent actions. Obtain that authorization before performing the authentication/consent steps below or enabling the live run. The demonstration must target disposable repositories, never cheap-ag source.
+The developer reports completed real Codex-to-DeepSeek demonstrations; the reported evidence and its review limits are recorded above and in [CODEX_ROADMAP.md](CODEX_ROADMAP.md). No provider calls were made during M1.4. Any new live run still requires separate explicit authorization before external provider calls, authentication changes, or repository consent actions. Obtain that authorization before performing the authentication/consent steps below or enabling the live run. The demonstration must target disposable repositories, never cheap-ag source.
 
 The runner in `test/codex-live.test.ts` has separate preparation and live modes. Preparation is offline and creates fresh fixture repositories, isolated homes, a manifest, and an evidence directory. It neither grants consent nor copies credentials.
 
@@ -172,6 +223,6 @@ A fake MCP client alone does not establish actual Codex orchestration. Ambiguous
 
 ## Current limits
 
-The installed macOS Codex CLI was probed as 0.163.0; the earlier Windows handoff probed 0.166.0. These version/help probes do not certify a real orchestration run. Record the actual version and authentication method with live demonstration evidence.
+Earlier macOS version/help probes used 0.163.0. The developer's later direct-routing demonstrations tested CLI 0.166.0. Only the latter is the tested version for this routing recommendation; other releases and environments need separate validation.
 
-Windows-specific fixture repairs are deferred. Node 22, Ubuntu/Windows validation, and actual paid-worker orchestration remain unverified in this macOS implementation session. Installer distribution, hooks, native-agent takeover, linked-worktree consent repair, and cost-savings benchmarks are outside Milestone 1.
+Windows-specific fixture repairs are deferred. Node 22 and Ubuntu/Windows validation remain unverified in this macOS implementation session. Installer distribution, hooks, native-agent takeover, linked-worktree consent repair, and systematic cost-savings benchmarks remain outside this focused routing change. M1.4 is implemented with offline verification recorded in the roadmap; independent review is pending.

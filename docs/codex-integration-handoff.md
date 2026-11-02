@@ -1,5 +1,38 @@
 # Codex CLI integration handoff
 
+## Resume here — 2026-11-02 M1.4 direct MCP routing
+
+Read [AGENTS.md](../AGENTS.md), [CODEX_ROADMAP.md](CODEX_ROADMAP.md), and [codex.md](codex.md) first. The developer explicitly authorized implementing M1.4 and offline verification, then stopping for independent review. This section supersedes the older resume instructions and checkout snapshots below.
+
+### Current state and evidence
+
+- At task start: branch `feature/codex-support`, HEAD `e5b7617b3c1149685ccbc32fee8900349a5baddd` (`Milestone M1.2 progress`), clean working tree. Earlier M1 changes and tests are tracked; the historical dirty-tree lists below are not current.
+- M1.1 hardening is implemented/offline-tested; independent acceptance is not recorded in the supplied task. The developer now reports completed real Codex → cheap-ag → DeepSeek demonstrations (M1.2). Do not continue to describe real provider execution as untested, and do not infer review acceptance or detailed controlled-failure evidence from the benchmark table alone.
+- M1.3 developer-reported single-run observations on the same medium-complexity Python task: Codex only **128,478 tokens / 63.7s / 28/28 held-out tests**; existing MCP routing **183,944 / 67.1s / 28/28**; direct routing **69,558 / 58.3s / 28/28**. Original delegated run: four `wait` calls. Optimized: zero `wait`, one `delegate`, two `exec`. Direct routing tested on **Codex CLI 0.166.0**. These results were supplied by the developer, not independently audited or rerun in M1.4; they are not guaranteed savings or M4 systematic benchmark acceptance.
+- Shared engine, all six MCP names/input schemas, Claude startup/installation, consent, same-model repairs and verification policy remain the compatibility boundaries. No engine, installer, credential, or consent changes belong in M1.4.
+
+### M1.4 implementation and decisions
+
+- `src/codex-config.ts` and a single explicit dispatch branch in `src/index.ts` add `cheapag codex-config`. It prints the two-line TOML for only `mcp__cheapag` to stdout, with no profile reads, file writes, or subprocess/provider calls. Unsupported arguments fail with usage on stderr and no TOML. No options or automatic config merger are provided.
+- `test/codex-config.test.ts` exercises the built CLI with fresh/existing isolated homes, repeatability, exact known-valid TOML, unchanged existing files/directory inventories, and invalid arguments. Existing `test/clients.test.ts` checks legacy/explicit Claude startup and all six Codex/Claude schemas.
+- [codex.md](codex.md#opt-in-direct-mcp-routing-m14) documents manual opt-in and per-invocation `-c` overrides, preserving every pre-existing direct-only array entry and unrelated server/config settings. Arrays are replaced by CLI overrides, so the one-entry example applies only to an absent/empty effective list. The generator deliberately does not inspect the effective configuration. The setting affects routing only; it does not enable code mode globally or register a server.
+- Supported/tested routing target is 0.166.0 from the developer's demonstrations; other releases are unverified. Current official configuration documentation confirms the key's meaning and dotted TOML CLI overrides; it is not a substitute for version-specific runtime evidence.
+
+### Verification and next gate
+
+M1.4 is **implemented and offline-tested; independent review pending**, not reviewed/completed. Verification on macOS, Node 26.13.0 / npm 11.20.0:
+
+- Targeted generator/client regressions: **15 passed** (five new generator cases and ten existing client cases). They pin exact known-valid TOML and the namespace without adding a parser dependency to the Node suite. Separately, offline Python 3.12 `tomllib` parsed the actual generated block, matching documentation, and dotted CLI override to exactly `features.code_mode.direct_only_tool_namespaces = ["mcp__cheapag"]`.
+- Build, type-check, and `git diff --check`: **passed**.
+- Full offline suite: **438 passed, 0 failed, 8 skipped** (446 tests, 33 files; 43.38s). npm offline; `CHEAPAG_LIVE`, `CHEAPAG_CODEX_LIVE`, and `CHEAPAG_CODEX_PREPARE` unset. Eight skips: five live-provider tests, one Codex offline-preparation case, and two Codex live cases.
+- Initial restricted-sandbox full run: **242 failed, 127 passed, 77 skipped**, with localhost `listen EPERM` / process-permission failures and resulting timeouts. The passing rerun used approved localhost/subprocess permissions. No code/test weakening was needed.
+
+No live tests, paid calls, credential changes, real repository consent actions, implementation delegation, commits, pushes, or publication were performed. Other CLI versions, Node/OS matrices, and live routing were not retested. Do not generate a review packet unless requested. Stop here for independent ChatGPT review; M1.4 is not reviewed/completed until that review is accepted. Full M1 acceptance still needs reconciliation of M1.1 review and M1.2/M1.3 evidence.
+
+## Historical checkpoints
+
+The sections below retain prior evidence and planning context. Their approval instructions, Git snapshots, and statements that no real provider workflow has run are historical, superseded by the current section and roadmap.
+
 ## 2026-11-01 — Targeted M1.2 MCP environment repair
 
 The developer reports that Codex now invokes cheap-ag MCP tools, but delegation fails with `no worker provider`, despite offline provider discovery finding `openrouter` in the isolated worker profile. The runner previously supplied XDG paths only to the Codex parent process. `test/codex-demo-env.ts` now builds the per-invocation MCP configuration with an explicit server `env` table containing all four isolated XDG paths, plus the isolated `HOME`, `USERPROFILE`, and `CODEX_HOME`. The configuration includes no inherited credentials or unrelated environment variables. `test/codex-live.test.ts` uses this helper and preserves the existing delegate/jobs approval settings, read-only sandbox, 300-second tool timeout, and worker spending limits.
@@ -8,7 +41,7 @@ Offline regressions check the actual configuration's environment table and prese
 
 Verification on macOS: targeted environment/configuration tests **4 passed**; full offline suite **433 passed, 0 failed, 8 skipped** (441 tests, 32 files); build, type-check, and `git diff --check` passed. The initial sandbox suite attempt failed with localhost `listen EPERM` errors and resulting timeouts (242 failed, 122 passed, 77 skipped); the successful full run used approved localhost/subprocess permissions. `CHEAPAG_LIVE` was unset and both Codex preparation/live flags were disabled for the full runs. The eight skips cover five live-provider tests and three Codex preparation/live cases. No live/provider calls were made.
 
-## Resume here — M1.1
+## Historical resume checkpoint — M1.1
 
 Read [AGENTS.md](../AGENTS.md) and [CODEX_ROADMAP.md](CODEX_ROADMAP.md) first. The current approved task is documentation closeout; implementation is not authorized by this handoff update. The independent review findings are still open for M1.1 status, although the current uncommitted tree already contains candidate changes and tests for them. Start by inspecting those exact changes against the findings, then make only targeted corrections if the evidence requires them:
 

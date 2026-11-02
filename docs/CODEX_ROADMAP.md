@@ -15,34 +15,34 @@ Milestones do not authorize commits, pushes, publication, credential changes, re
 
 ## M1 — Core Codex integration
 
-**Objective and deliverables:** Codex plans, delegates to the configured cheap OpenCode worker, and reviews verified uncommitted work through the existing MCP server and engine. Preserve Claude behavior. The offline core (M1.0) is **completed for offline scope** (implemented and tested). M1.1 review hardening is **pending**; M1.2 live provider demonstration is **pending, untested, and blocked on separate authorization**. M1 is not completed.
+**Objective and deliverables:** Codex plans, delegates to the configured cheap OpenCode worker, and reviews verified uncommitted work through the existing MCP server and engine. Preserve Claude behavior. The offline core (M1.0) is **completed for offline scope** (implemented and tested). M1.1 hardening is implemented/offline-tested with independent acceptance still unrecorded. The developer reports completed M1.2 real DeepSeek demonstrations and M1.3 single-run benchmarks; supplied evidence is recorded below without inferring independent review. M1.4 direct routing configuration is implemented; offline verification and review status are recorded below. M1 is not declared completed while review/acceptance evidence remains outstanding.
 
 **Acceptance criteria:** retain legacy no-argument Claude startup and all six existing MCP names/schemas; Codex execution policy persists across jobs, retries, and deferred fixes; Codex implementation requires executable verification; repairs are bounded and stay on the selected model; consent and caps remain effective; success lands only verified changes uncommitted; controlled failure does not land. M1 additionally requires independent review and the two real M1.2 outcomes.
 
 **Verification:** targeted regressions after each change, full offline suite, build and type-check; manually inspect consent, policy, evidence, diff, and repository state. Fixture/fake-worker results are not real provider proof.
 
-**Dependencies, gates, and next actions:** M1.0 is complete at the offline checkpoint (425 passed, 8 skipped; build/type-check passed). First resume M1.1 and resolve both findings below, run its acceptance checks, then stop for independent review. M1.2 may start only after M1.1 review and separate explicit authorization **before any external provider call, authentication change, or repository consent action**. M1.2 requires two disposable repositories: verified success landing and controlled failure with no landing. Review sanitized evidence before declaring M1 complete.
+**Dependencies, gates, and next actions:** M1.0 is complete at the offline checkpoint (425 passed, 8 skipped; build/type-check passed). The current task authorizes M1.4 implementation/offline checks only, followed by independent review. Reconcile M1.1 acceptance and review the supplied M1.2/M1.3 evidence without rerunning paid calls. M1.2 acceptance still requires verified success landing and controlled failure with no landing in two disposable repositories; the supplied benchmark table alone does not prove all of those details. Any new run needs separate explicit authorization **before any external provider call, authentication change, or repository consent action**. Review sanitized evidence before declaring M1 complete or advancing approval gates.
 
-**Out of scope:** installers, hooks, Windows fixture repairs, CI/platform certification, benchmarking, automatic host takeover, commits/pushes, and publication.
+**Out of scope:** installers, hooks, Windows fixture repairs, CI/platform certification, systematic benchmarking (M4), automatic host takeover, commits/pushes, and publication. M1.3 records the already-reported observations only.
 
-**Independent review:** M1.1 code/evidence review before M1.2; M1.2 evidence review before M1 completion.
+**Independent review:** M1.1 code/evidence acceptance and M1.2/M1.3 evidence review remain unrecorded here. Stop at the M1.4 checkpoint for independent ChatGPT review before proceeding through the next gate.
 
 ### M1.1 — Resolve independent-review findings
 
-**Status:** **Pending** acceptance/review. Candidate hardening and regression tests exist uncommitted in this checkout from the previous session; the findings remain open for this milestone until the next session validates or corrects the candidate and the reviewer accepts the results. Do not describe M1.1 as completed or independently reviewed.
+**Status:** **Implemented and offline-tested; independent acceptance/review unrecorded.** Hardening and regressions are now tracked in the checkout (including the later M1.2 environment repair). Historical offline verification reached 433 passed, 0 failed, 8 skipped, with build/type-check passing. The findings remain open for milestone acceptance until review is recorded. Do not describe M1.1 as completed or independently reviewed.
 
 1. The live runner must not pass unrelated inherited credentials/configuration to Codex or its worker subprocess. Build an explicit minimal environment and verify the actual child environment with synthetic secret/config values and a stub executable.
 2. Deferred integration must preserve the originally selected executable check across persisted batch state, retries, and later host sessions. Replacing/removing current `integration_cmd` or `test_cmd` must not substitute for the original; represent an original no-check state and handle legacy records conservatively without changing Claude behavior.
 
 **Acceptance and verification:** targeted regressions reproduce both findings; cover changed, removed, and fallback checks, persistence through deferred fix, legacy missing metadata, and original no-check; environment tests prove unrelated variables do not reach the child. Then run relevant integration tests, full offline suite, build, and type-check; document any remaining limitations. No live provider/auth/consent action.
 
-**Gate and next action:** implementation and offline checks are authorized. Resolve/reassess the local candidate in the next session; prepare an on-demand review packet only when requested, then stop for independent review. M1.2 remains separately gated.
+**Gate and next action:** reconcile the tracked hardening and existing evidence with independent review; prepare an on-demand review packet only when requested. Later developer-reported M1.2 runs do not establish M1.1 review acceptance. Any new live run remains separately gated.
 
 **Out of scope:** real provider calls, changing credentials, granting repository consent, cross-platform fixture repair, or unrelated production refactoring.
 
 ### M1.2 — Real provider end-to-end demonstration
 
-**Status:** **Pending, untested, blocked on separate explicit authorization.** No real Codex-to-cheap-worker provider workflow has been verified.
+**Status:** **Real demonstrations completed/tested as reported by the developer; independent evidence review pending.** The 2026-11-02 task reports real Codex → cheap-ag → DeepSeek demonstrations and 28/28 held-out tests for both delegated benchmark configurations. This supersedes the earlier statement that no real provider workflow had run. The current task supplies no raw traces or detailed controlled-failure audit, so full M1.2 acceptance and review are not inferred. No live run was performed as part of M1.4.
 
 **Objective and deliverables:** demonstrate actual Codex → cheap-ag MCP → configured external worker → server verification in disposable Git repositories. Capture sanitized CLI/MCP events, matching jobs/sessions, selected model/policy, commands and exit results, patches, and repository-state evidence.
 
@@ -50,11 +50,27 @@ Milestones do not authorize commits, pushes, publication, credential changes, re
 
 **Verification:** opt-in real CLI/provider run and manual audit of sanitized evidence, diffs, repository state, and process cleanup. Offline preparation and fake MCP tests do not satisfy this milestone.
 
-**Dependencies and gates:** accepted M1.1 independent review plus separate explicit authorization **before any external provider calls, authentication changes, or repository consent actions**, including setup. Authorize the specific disposable repositories, provider/model, credential method, consent, and spend limits. Do not copy existing credentials. Stop if the actual scope differs.
+**Dependencies and gates:** record M1.1 independent acceptance and review the already-reported evidence. Future live work still requires separate explicit authorization **before any external provider calls, authentication changes, or repository consent actions**, including setup. Authorize the specific disposable repositories, provider/model, credential method, consent, and spend limits. Do not copy existing credentials. Stop if the actual scope differs.
 
 **Out of scope:** cheap-ag source as a worker target, global installation, benchmarking claims, publication, and implementation changes beyond the approved demo scope.
 
 **Independent review:** review sanitized live evidence before M1 completion or M2 approval.
+
+### M1.3 — Observed routing benchmarks
+
+**Status:** **Tested as reported by the developer; documented; independent review pending.** Same medium-complexity Python task: Codex only used **128,478 Codex tokens / 63.7s / 28/28 held-out tests**; existing MCP routing used **183,944 / 67.1s / 28/28**; direct MCP routing used **69,558 / 58.3s / 28/28**. The original delegated run contained four `wait` calls; the optimized run contained zero, one `delegate`, and two `exec` calls. Direct routing was tested on **Codex CLI 0.166.0**.
+
+**Evidence limits and gate:** single-run observations supplied in the 2026-11-02 implementation request, not rerun or independently audited in M1.4. No guaranteed savings, repeated-trial statistics, or worker billing conclusion. See [codex.md](codex.md#evidence-and-verification). M4's systematic methodology/results gates remain separate; obtain independent evidence review before treating these observations as accepted benchmark findings.
+
+### M1.4 — Direct MCP routing configuration
+
+**Status:** **Implemented and offline-tested; independent review pending.** Not reviewed/completed.
+
+**Deliverables and design:** `cheapag codex-config` prints only the optional `[features.code_mode]` / `direct_only_tool_namespaces = ["mcp__cheapag"]` TOML. It accepts no flags, reads no profile, writes no files, starts no provider/Codex process, and changes no registration, authentication, consent, engine behavior, or Claude integration. [codex.md](codex.md#opt-in-direct-mcp-routing-m14) includes per-invocation overrides, version scope, verification, removal, and manual merge instructions preserving existing direct-only list entries and unrelated MCP settings. No automatic global configuration modification or installer refactor.
+
+**Verification (2026-11-02, macOS, Node 26.13.0 / npm 11.20.0):** targeted `test/codex-config.test.ts` + `test/clients.test.ts` **15 passed** (five new generator regressions plus ten existing client/schema/Claude cases). Exact-output regressions pin known-valid TOML; a separate offline Python 3.12 `tomllib` check parsed the generated/documented block and dotted CLI override to exactly the cheap-ag namespace. Build, type-check, and `git diff --check` passed. Complete offline suite **438 passed, 0 failed, 8 skipped** (446 tests, 33 files; 43.38s), with npm offline and `CHEAPAG_LIVE`, `CHEAPAG_CODEX_LIVE`, `CHEAPAG_CODEX_PREPARE` unset. The eight skips are five live-provider tests and three Codex preparation/live cases. The initial restricted-sandbox run failed (**242 failed, 127 passed, 77 skipped**) with localhost `listen EPERM` / process-permission failures and resulting timeouts; the passing rerun used approved localhost/subprocess permissions. No paid/live/provider rerun or new platform/version certification.
+
+**Review gate:** stop after implementation and offline verification for independent ChatGPT review. Do not mark reviewed/completed, generate review packets unless requested, or proceed through the next approval gate. No commits, pushes, publication, provider calls, credential changes, or repository consent actions are authorized.
 
 ## M2 — Installation and developer experience
 
