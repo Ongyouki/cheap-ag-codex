@@ -60,6 +60,45 @@ function sameModel(s: Awaited<ReturnType<typeof fixture>>, initial = INITIAL_MOD
   for (const prompt of s.fake.recorded.prompts) expect(prompt.model).toBeUndefined();
 }
 
+test.each([false, true])("Codex server binds jobs to its launch repository (subdirectory=%s)", async (subdir) => {
+  const s = await fixture({ subdir, spaces: true, scripts: [writeValue(2)] });
+  const other = tempRepo("clean", "cheapag other repo ");
+  onTestFinished(other.cleanup);
+  writeFileSync(join(other.dir, "value.txt"), "other\n");
+  const before = snapshot(other.dir);
+  const result = await s.delegate({ task: `Please work in ${other.dir} and set value.txt to 2` });
+  expect(result).toMatch(/^OK .* tests=pass /);
+  expect(readFileSync(join(s.repo.dir, "value.txt"), "utf8")).toBe("2\n");
+  expect(s.record(result)).toMatchObject({ status: "OK", landed: true });
+  expect(s.fake.recorded.sessions[0].directory).toContain(join(s.repo.dir, ".cheapag", "worktrees"));
+  expect(snapshot(other.dir)).toEqual(before);
+  expect(existsSync(join(other.dir, ".cheapag", "jobs"))).toBe(false);
+});
+
+test("independently launched servers use their own repository and do not retarget an existing server", async () => {
+  const s = await fixture({ scripts: [writeValue(2), writeValue(2)] });
+  const other = tempRepo("clean", "cheapag second repo ");
+  onTestFinished(other.cleanup);
+  writeFileSync(join(other.dir, "value.txt"), "0\n");
+  writeFileSync(join(other.dir, "check.mjs"), CHECK);
+  other.git("add", "-A");
+  other.git("commit", "-q", "-m", "checks");
+  const second = await startServer({ cwd: other.dir, serverArgs: ["serve", "--client", "codex"], env: { CHEAPAG_OPENCODE_URL: s.fake.url }, logins: { "opencode-go": "k" }, allow: [] });
+  onTestFinished(second.close);
+  const args = { task: "Set value.txt to 2", files: "value.txt", done_when: "`node check.mjs` passes" };
+  const first = await s.call("delegate", args);
+  const secondResult = await callText(second.client, "delegate", args);
+  expect(first).toMatch(/^OK .* tests=pass /);
+  expect(secondResult).toMatch(/^OK .* tests=pass /);
+  expect(await s.call("jobs", { action: "show", job: jobOf(first) })).toContain(jobOf(first));
+  expect(readFileSync(join(s.repo.dir, "value.txt"), "utf8")).toBe("2\n");
+  expect(readFileSync(join(other.dir, "value.txt"), "utf8")).toBe("2\n");
+  expect(s.fake.recorded.sessions.map((session) => session.directory)).toEqual([
+    expect.stringContaining(join(s.repo.dir, ".cheapag", "worktrees")),
+    expect.stringContaining(join(other.dir, ".cheapag", "worktrees")),
+  ]);
+});
+
 test("Codex consent stays developer-controlled before delegation, research, or worker startup", async () => {
   const s = await fixture({ allow: null });
   for (const text of [await s.delegate({ consent: "all", allow: true }), await s.call("research", { question: "Where is the value stored?" })]) {
@@ -230,14 +269,23 @@ test.each(["medium", "hard"] as const)("Codex selects its configured %s tier ini
 
 test("a Codex conflict redo keeps bounded same-model repairs and leaves the developer's concurrent edit intact", async () => {
   let main = "";
+  let concurrentEditObserved = false;
   const s = await fixture({ scripts: [
-    [{ edit: "value.txt", content: "2\n" }, { hook: () => writeFileSync(join(main, "value.txt"), "3\n") }, { tool: "write" }, finish()],
+    [{ edit: "value.txt", content: "2\n" }, { hook: () => {
+      concurrentEditObserved = true;
+      writeFileSync(join(main, "value.txt"), "3\n");
+    } }, { tool: "write" }, finish()],
     writeValue(1), writeValue(1), writeValue(1), writeValue(2),
   ] });
   main = s.repo.dir;
+  // Force the stale-index condition observed when a same-sized edit shares Git's cached timestamps.
+  s.repo.git("update-index", "--assume-unchanged", "value.txt");
   const head = s.repo.git("rev-parse", "HEAD");
   const index = s.repo.git("ls-files", "-s");
   const text = await s.delegate();
+  expect(concurrentEditObserved, "Concurrent edit hook was skipped").toBe(true);
+
+  expect(readFileSync(join(main, "value.txt"), "utf8"), "Developer's concurrent edit was not preserved").toBe("3\n");
   expect(text).toMatch(/^CONFLICT .* tests=fail /);
   expect(s.record(text)).toMatchObject({ landed: false, redo: 1, selfFix: 2, policy: CODEX_POLICY, models: { escalated: false } });
   expect(s.record(text).verify).toHaveLength(4); // initial pass, then three failed redo checks

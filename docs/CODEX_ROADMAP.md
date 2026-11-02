@@ -74,7 +74,17 @@ Milestones do not authorize commits, pushes, publication, credential changes, re
 
 ## M2 — Installation and developer experience
 
-**Status:** **Proposed, unimplemented.**
+**Status:** **M2.1a project-scoped setup implemented; independent review pending.** Broader M2 remains proposed and unimplemented. M1.1 acceptance and M1.2/M1.3 evidence review and M1.4 independent review remain outstanding; authorization of M2.1a does not close those gates.
+
+**M2.1a scope:** `cheapag codex setup --project <path> [--dry-run]` creates only a new project configuration, pins the MCP cwd to the canonical Git root, and enables direct routing. It refuses an existing configuration and linked worktrees; it excludes the generated config through Git's local exclude file and verifies the ignore rule before writing. Update, uninstall, global configuration, merging, trust, credentials, and consent remain out of scope. Stop for independent review of this implementation and offline evidence.
+
+**Review fixes awaiting independent review:** setup parses selected Codex-home and ancestor project configuration files read-only, refusing malformed or unsupported files, cheapag registrations, and direct-only namespace entries. On setup failure it attempts to roll back only its unchanged Git exclude addition; concurrent modifications are preserved when detected. Managed/system settings, invocation overrides, and the simultaneous-writer race described in `codex.md` remain limitations.
+
+**Review-fix verification (2026-11-02):** targeted setup tests 10 passed; full offline suite 451 passed, 8 skipped (459 tests, 34 files), with live and preparation flags unset and npm offline. The full run used approved localhost and subprocess permissions. Build, type-check, and `git diff --check` passed. No real Codex runtime or provider call was performed.
+
+**Final compatibility correction:** read-only TOML parsing allows unrelated higher-level settings and refuses conflicts or unsupported input. Targeted setup tests 15 passed; full offline suite 456 passed, 8 skipped (464 tests, 34 files), with live and preparation flags unset and npm offline. Build, type-check, and `git diff --check` passed. Independent review remains pending.
+
+**M2.1a verification (2026-11-02):** focused setup tests 6 passed; full offline suite 447 passed, 8 skipped (455 tests, 34 files), with live and preparation flags unset and npm offline. The full run used approved localhost and subprocess permissions. Build, type-check, and `git diff --check` passed. No real Codex runtime, provider call, authentication change, or consent action was performed.
 
 **Objective and deliverables:** make local install, Codex registration, updates, troubleshooting, and removal repeatable while preserving Claude coexistence and separate orchestrator/worker authentication. Deliver an approved setup/ownership design, focused implementation and docs; any optional workflow skill is separately scoped.
 

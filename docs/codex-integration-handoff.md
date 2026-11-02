@@ -1,5 +1,23 @@
 # Codex CLI integration handoff
 
+## Landing stale-index correction
+
+In an isolated repeated Codex regression, diagnostic output captured the failing landing with the working file containing `3\n`, the disposable index still containing `0\n` after `git add`, and `git apply --3way --check` reporting a clean patch; the subsequent apply overwrote the developer's edit with `2\n`. Git can reuse stale cached stat information for same-sized edits. Landing now forces Git to rehash existing patch paths in its disposable index with `git add --renormalize` before the three-way check. The Codex regression sets an assume-unchanged index flag to reproduce a stale entry deterministically and retains the developer-file assertion. The real index is not rewritten by this step.
+
+This fixes the observed stale-index overwrite; it does not eliminate the pre-existing race where an external editor changes a file after the check and before or during the working-tree apply. The cheap-ag lock only coordinates cheap-ag processes, not editors. Independent review remains required.
+
+Verification: the targeted conflict regression passed 20 consecutive runs after the fix. The full offline suite passed 456 tests with 8 skipped; build and type-check passed. Live/provider flags were unset and fake-worker runs used approved localhost permissions.
+
+## M2.1a project setup
+
+The developer authorized a narrow project-scoped setup, with independent review required afterward. Setup writes a new `.codex/config.toml` with the canonical repository root as MCP cwd and direct routing; it refuses an existing config, temporary installation, and linked worktree. It parses selected Codex-home and ancestor project configs read-only, refusing malformed or unsupported structures, existing cheapag registrations, and direct-only namespace entries. Managed/system layers, runtime overrides and future changes cannot be checked. It adds a local Git exclude and verifies the ignore result before writing; failure rolls back only an unchanged addition, subject to the documented simultaneous-writer race. It does not set project trust or authenticate, and does not merge configuration. Broader M2 and all M1 review gates remain open.
+
+## Repository binding investigation — 2026-11-02
+
+The Codex MCP server resolves the Git repository from its own process working directory. A launch in a repository subdirectory resolves to that repository's root. The tool schemas do not select a repository per request: a request naming a different repository does not retarget the server. Offline fake-worker regressions exercise root and subdirectory launches, two independently launched servers, and a cross-repository request. These are local MCP harness tests, not Codex runtime evidence.
+
+For M2.1, recommend one server process per Codex session, bound to the intended repository at process launch; restart the server when switching repositories. A fixed global MCP `cwd` would bind every launch to the same repository. Omitting it is safe only if the particular Codex client/version launches a fresh server with the intended repository as its cwd; the official documentation describes `cwd` as optional but does not establish that default. Confirm actual Codex startup behavior before relying on omission. No installer decision or M1 review acceptance follows from these tests.
+
 ## Resume here — 2026-11-02 M1.4 direct MCP routing
 
 Read [AGENTS.md](../AGENTS.md), [CODEX_ROADMAP.md](CODEX_ROADMAP.md), and [codex.md](codex.md) first. The developer explicitly authorized implementing M1.4 and offline verification, then stopping for independent review. This section supersedes the older resume instructions and checkout snapshots below.

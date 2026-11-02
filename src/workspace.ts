@@ -238,6 +238,10 @@ export function land(root: string, job: string, patch: string, paths: string[]):
       const tracked = new Set(git(root, ["ls-files", "-z", "--", ...paths.map(literal)], env).split("\0"));
       const present = paths.filter((p) => tracked.has(p) || existsSync(join(root, p)));
       if (present.length) git(root, ["add", "-A", "--", ...present.map(literal)], env);
+      // `git add` can reuse a stale cached stat (or an assume-unchanged entry) even when bytes changed.
+      // Force Git to hash the current contents for every existing path in this disposable index.
+      const existing = paths.filter((p) => lstatOf(join(root, p)) !== undefined);
+      if (existing.length) git(root, ["add", "--renormalize", "--", ...existing.map(literal)], env);
       const check = applyOutput(root, ["apply", "--3way", "--check", "-"], env, patch);
       // shortcut: `apply --3way --check` exits 0 even when it would leave conflict markers, so read its message; upgrade if git changes the wording
       if (check.failed || /with conflicts/.test(check.output)) return check.output.trim() || "patch does not apply";

@@ -12,6 +12,10 @@ node /absolute/path/to/cheap-ag-codex/dist/index.js serve --client codex
 
 ## Build and connect a local checkout
 
+Project-scoped setup is opt-in: `cheapag codex setup --project /absolute/path/to/repo --dry-run` previews the configuration; omit `--dry-run` to create `.codex/config.toml`. The command binds the server to the canonical repository root, adds the file to Git's local exclude file, and checks that Git ignores it. Existing project configuration is never merged or overwritten; the command prints a manual integration example. Linked worktrees and temporary installations are refused. On failure, setup removes its added exclude line only if the file still matches the expected contents and identity; otherwise it leaves the file for manual review. Git's exclude does not prevent a deliberate `git add -f`.
+
+Codex reads project settings only for trusted projects; setup does not change trust. Setup parses existing `config.toml` files in the selected `CODEX_HOME` (or default home) and ancestor project `.codex` directories without changing them. It refuses malformed or unsupported files, an existing cheapag registration, and any direct-only namespace entry because it cannot safely merge them. This conservative check cannot discover managed/system configuration, per-invocation overrides, other clients' homes, or changes made after setup; review effective routing in those cases. The exclude rollback checks identity and contents, but cannot lock out a simultaneous external writer between its check and truncation. An MCP process remains bound to its configured cwd; use a separate session for another repository. Actual Codex runtime behavior and independent M2.1a review remain pending.
+
 From the fork, with dependencies already installed:
 
 ```sh
