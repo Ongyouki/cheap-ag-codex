@@ -1,5 +1,9 @@
 # Codex CLI integration handoff
 
+## M2.1b read-only status
+
+The developer reports M2.1a was committed and independently reviewed, including a trusted-profile Codex registration smoke test and independent discovery of six MCP tools. `cheapag codex status --project <path>` inspects project config, command and entry availability, cwd, routing, Git exclusion, and an exact-root trust entry in the selected Codex home. It does not establish effective trust, layered settings, or a live Codex connection, and runs no server or provider. M2.1b requires independent review.
+
 ## Landing stale-index correction
 
 In an isolated repeated Codex regression, diagnostic output captured the failing landing with the working file containing `3\n`, the disposable index still containing `0\n` after `git add`, and `git apply --3way --check` reporting a clean patch; the subsequent apply overwrote the developer's edit with `2\n`. Git can reuse stale cached stat information for same-sized edits. Landing now forces Git to rehash existing patch paths in its disposable index with `git add --renormalize` before the three-way check. The Codex regression sets an assume-unchanged index flag to reproduce a stale entry deterministically and retains the developer-file assertion. The real index is not rewritten by this step.
